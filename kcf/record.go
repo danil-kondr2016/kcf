@@ -33,22 +33,24 @@ type Record struct {
 	Data []byte
 }
 
+var le = binary.LittleEndian
+
 func (rec Record) MarshalBinary() (data []byte, err error) {
 	data = make([]byte, 0)
-	data = binary.LittleEndian.AppendUint16(data, rec.HeadCRC)
+	data = le.AppendUint16(data, rec.HeadCRC)
 	data = append(data, uint8(rec.HeadType))
 	data = append(data, uint8(rec.HeadFlags))
-	data = binary.LittleEndian.AppendUint16(data, rec.HeadSize)
+	data = le.AppendUint16(data, rec.HeadSize)
 
 	if rec.HeadFlags&HAS_ADDED_8 == HAS_ADDED_4 {
-		data = binary.LittleEndian.AppendUint32(data,
+		data = le.AppendUint32(data,
 			uint32(rec.AddedDataSize))
 	} else if rec.HeadFlags&HAS_ADDED_8 == HAS_ADDED_8 {
-		data = binary.LittleEndian.AppendUint64(data, rec.AddedDataSize)
+		data = le.AppendUint64(data, rec.AddedDataSize)
 	}
 
 	if rec.HeadFlags&HAS_ADDED_CRC32 != 0 {
-		data = binary.LittleEndian.AppendUint32(data, rec.AddedDataCRC32)
+		data = le.AppendUint32(data, rec.AddedDataCRC32)
 	}
 
 	data = append(data, rec.Data...)
@@ -119,7 +121,7 @@ func (ahdr ArchiveHeader) AsRecord() (record Record, err error) {
 	record.HeadType = ARCHIVE_HEADER
 	record.HeadFlags = 0
 
-	record.Data = binary.LittleEndian.AppendUint16(nil, ahdr.Version)
+	record.Data = le.AppendUint16(nil, ahdr.Version)
 	err = record.Fix()
 
 	return
@@ -163,25 +165,24 @@ func (fhdr FileHeader) AsRecord() (rec Record, err error) {
 	data = append(data, uint8(fhdr.FileType))
 
 	if (fhdr.FileFlags & HAS_UNPACKED_8) == HAS_UNPACKED_4 {
-		data = binary.LittleEndian.AppendUint32(data,
-			uint32(fhdr.UnpackedSize))
+		data = le.AppendUint32(data, uint32(fhdr.UnpackedSize))
 	} else if (fhdr.FileFlags & HAS_UNPACKED_8) == HAS_UNPACKED_8 {
-		data = binary.LittleEndian.AppendUint64(data, fhdr.UnpackedSize)
+		data = le.AppendUint64(data, fhdr.UnpackedSize)
 	}
 
 	if (fhdr.FileFlags & HAS_FILE_CRC32) != 0 {
-		data = binary.LittleEndian.AppendUint32(data, fhdr.FileCRC32)
+		data = le.AppendUint32(data, fhdr.FileCRC32)
 	}
 
-	data = binary.LittleEndian.AppendUint32(data, fhdr.CompressionInfo)
+	data = le.AppendUint32(data, fhdr.CompressionInfo)
 
 	if (fhdr.FileFlags & HAS_TIMESTAMP) != 0 {
-		data = binary.LittleEndian.AppendUint64(data, fhdr.TimeStamp)
+		data = le.AppendUint64(data, fhdr.TimeStamp)
 	}
 
 	fileNameBytes := []byte(fhdr.FileName)
 	fileNameSize := len(fileNameBytes)
-	data = binary.LittleEndian.AppendUint16(data, uint16(fileNameSize))
+	data = le.AppendUint16(data, uint16(fileNameSize))
 	data = append(data, fileNameBytes...)
 
 	return
