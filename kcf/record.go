@@ -4,6 +4,8 @@ import "encoding/binary"
 import "hash/crc32"
 import "errors"
 
+var InvalidFormat = errors.New("Invalid archive format")
+
 type RecordType uint8
 
 const (
@@ -184,6 +186,62 @@ func (fhdr FileHeader) AsRecord() (rec Record, err error) {
 	fileNameSize := len(fileNameBytes)
 	data = le.AppendUint16(data, uint16(fileNameSize))
 	data = append(data, fileNameBytes...)
+
+	return
+}
+
+func RecordToArchiveHeader(rec Record) (
+	ahdr ArchiveHeader,
+	err error,
+) {
+	if !rec.ValidateCRC() {
+		err = InvalidFormat
+		return
+	}
+
+	ahdr.Version = le.Uint16(rec.Data)
+	return
+}
+
+func RecordToFileHeader(rec Record) (
+	fhdr FileHeader,
+	err error,
+) {
+	if !rec.ValidateCRC() {
+		err = InvalidFormat
+		return
+	}
+
+	fhdr.FileFlags = FileFlags(rec.Data[0])
+	fhdr.FileType = FileType(rec.Data[1])
+
+	var ptr int = 2
+	if (fhdr.FileFlags & HAS_UNPACKED_8) == HAS_UNPACKED_4 {
+		fhdr.UnpackedSize = uint64(le.Uint32(rec.Data[ptr:]))
+		ptr += 4
+	} else if (fhdr.FileFlags & HAS_UNPACKED_8) == HAS_UNPACKED_8 {
+		fhdr.UnpackedSize = le.Uint64(rec.Data[ptr:])
+		ptr += 8
+	}
+
+	if (fhdr.FileFlags & HAS_FILE_CRC32) != 0 {
+		fhdr.FileCRC32 = le.Uint32(rec.Data[ptr:])
+		ptr += 4
+	}
+
+	fhdr.CompressionInfo = le.Uint32(rec.Data[ptr:])
+	ptr += 4
+
+	if (fhdr.FileFlags & HAS_TIMESTAMP) != 0 {
+		fhdr.TimeStamp = le.Uint64(rec.Data[ptr:])
+		ptr += 8
+	}
+
+	fileNameSize := le.Uint16(rec.Data[ptr:])
+	ptr += 2
+
+	fileNameBytes := rec.Data[ptr : ptr+int(fileNameSize)]
+	fhdr.FileName = string(fileNameBytes)
 
 	return
 }
