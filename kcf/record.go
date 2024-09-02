@@ -75,7 +75,7 @@ func (rec Record) getHeadCRC() (crc uint16) {
 	return
 }
 
-func (rec Record) VaildateCRC() (isValid bool) {
+func (rec Record) ValidateCRC() (isValid bool) {
 	crc := rec.getHeadCRC()
 	if crc != rec.HeadCRC {
 		isValid = false
