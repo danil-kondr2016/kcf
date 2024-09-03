@@ -2,7 +2,7 @@ package kcf
 
 import "encoding/binary"
 import "hash/crc32"
-import "errors"
+import "io"
 
 type RecordType uint8
 
@@ -56,6 +56,76 @@ func (rec Record) MarshalBinary() (data []byte, err error) {
 	data = append(data, rec.Data...)
 
 	err = nil
+	return
+}
+
+func (rec *Record) unmarshal(header []byte, data []byte) error {
+	rec.HeadCRC = le.Uint16(header[0:])
+	rec.HeadType = RecordType(header[2])
+	rec.HeadFlags = RecordFlags(header[3])
+	rec.HeadSize = le.Uint16(header[4:])
+
+	ptr := 0
+	if (rec.HeadFlags & HAS_ADDED_8) == HAS_ADDED_4 {
+		rec.AddedDataSize = uint64(le.Uint32(data[ptr:]))
+		ptr += 4
+	} else if (rec.HeadFlags & HAS_ADDED_8) == HAS_ADDED_8 {
+		rec.AddedDataSize = le.Uint64(data[ptr:])
+		ptr += 8
+	}
+
+	if (rec.HeadFlags & HAS_ADDED_CRC32) != 0 {
+		rec.AddedDataCRC32 = le.Uint32(data[ptr:])
+		ptr += 4
+	}
+
+	rec.Data = make([]byte, int(rec.HeadSize)-ptr)
+	copy(rec.Data, data[ptr:])
+
+	return nil
+}
+
+func (rec *Record) UnmarshalBinary(data []byte) error {
+	return rec.unmarshal(data[:6], data[6:])
+}
+
+func (rec *Record) ReadFrom(r io.Reader) (n int64, err error) {
+	var Header, Data []byte
+	var n_read int
+
+	Header = make([]byte, 6)
+	n_read, err = r.Read(Header)
+	if err != nil {
+		return 0, err
+	}
+	n += int64(n_read)
+
+	to_read := int(le.Uint16(Header[4:])) - 6
+	Data = make([]byte, to_read)
+	n_read, err = r.Read(Data)
+	if err != nil {
+		return 0, err
+	}
+	n += int64(n_read)
+
+	rec.unmarshal(Header, Data)
+	if !rec.ValidateCRC() {
+		err = InvalidRecordData
+	}
+	return
+}
+
+func (rec Record) WriteTo(w io.Writer) (n int64, err error) {
+	var n_read int = 0
+	var buffer []byte
+
+	buffer, err = rec.MarshalBinary()
+	n_read, err = w.Write(buffer)
+	if err != nil {
+		return 0, err
+	}
+
+	n = int64(n_read)
 	return
 }
 
