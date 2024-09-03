@@ -4,8 +4,6 @@ import "encoding/binary"
 import "hash/crc32"
 import "errors"
 
-var InvalidFormat = errors.New("Invalid archive format")
-
 type RecordType uint8
 
 const (
@@ -103,7 +101,7 @@ func (rec *Record) Fix() (err error) {
 
 	recSize := int(headSize) + len(rec.Data)
 	if recSize > 65535 {
-		err = errors.New("too big record data size")
+		err = TooBigRecordData
 		return
 	}
 	rec.HeadCRC = rec.getHeadCRC()
@@ -156,7 +154,7 @@ type FileHeader struct {
 
 func (fhdr FileHeader) AsRecord() (rec Record, err error) {
 	if len(fhdr.FileName) > 65535 {
-		err = errors.New("too long file name: more than 65535 bytes")
+		err = TooBigFileName
 		return
 	}
 
