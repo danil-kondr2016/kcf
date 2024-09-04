@@ -46,6 +46,7 @@ const (
 
 const (
 	flagAddedCRC kcfState = (1 << (iota + 6))
+	flagKnownSize
 )
 
 func (state kcfState) IsReading() bool {
@@ -74,20 +75,32 @@ func (state *kcfState) SetStage(s stage) {
 	*state = kcfState(x)
 }
 
-func (state kcfState) ShouldValidateAddedCRC() bool {
+func (state kcfState) HasAddedCRC() bool {
 	return state&flagAddedCRC != 0
 }
 
-func (state *kcfState) SetShouldValidateAddedCRC(x bool) {
+func (state *kcfState) SetHasAddedCRC(x bool) {
 	*state &^= flagAddedCRC
 	if x {
 		*state |= flagAddedCRC
 	}
 }
 
+func (state kcfState) IsAddedSizeKnown() bool {
+	return state&flagKnownSize != 0
+}
+
+func (state *kcfState) SetAddedSizeKnown(x bool) {
+	*state &^= flagKnownSize
+	if x {
+		*state |= flagKnownSize
+	}
+}
+
 type Kcf struct {
 	state        kcfState
 	available    uint64
+	written      uint64
 	recOffset    int64
 	recEndOffset int64
 	validCrc     uint32
@@ -98,6 +111,7 @@ type Kcf struct {
 	crc32       hash.Hash32
 	file        *os.File
 	addedReader io.LimitedReader
+	addedWriter LimitedWriter
 
 	lastRecord  Record
 	currentFile FileHeader
