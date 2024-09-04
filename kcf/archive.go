@@ -22,6 +22,7 @@ import "hash"
 //	0004 - record added data
 //
 // bit 6 - should validate CRC32 of added data
+// bit 7 - has known size of added data
 type kcfState uint64
 
 type mode uint64
@@ -115,6 +116,7 @@ type Kcf struct {
 
 	lastRecord  Record
 	currentFile FileHeader
+	archiveHdr  ArchiveHeader
 }
 
 func (kcf Kcf) IsWritable() bool {
@@ -169,6 +171,64 @@ func (kcf *Kcf) Close() (err error) {
 	kcf.addedReader.N = 0
 	kcf.crc32 = nil
 	err = kcf.file.Close()
+
+	return
+}
+
+func (kcf *Kcf) GetCurrentFile() (info FileHeader, err error) {
+	if !kcf.state.IsReading() {
+		err = InvalidState
+		return
+	}
+
+	if kcf.state.GetStage() == stageRecordHeader {
+		_, err = kcf.readRecord()
+		if err != nil {
+			return
+		}
+
+		kcf.currentFile, err = RecordToFileHeader(kcf.lastRecord)
+		if err != nil {
+			return
+		}
+	}
+
+	info = kcf.currentFile
+	return
+}
+
+func (kcf *Kcf) InitArchive() (err error) {
+	if kcf.state.IsWriting() {
+		err = kcf.writeMarker()
+		if err != nil {
+			return
+		}
+
+		kcf.lastRecord, err = ArchiveHeader{Version: 1}.AsRecord()
+		if err != nil {
+			return
+		}
+
+		_, err = kcf.writeRecord(kcf.lastRecord)
+		if err != nil {
+			return
+		}
+	} else if kcf.state.IsReading() {
+		err = kcf.scanForMarker()
+		if err != nil {
+			return
+		}
+
+		_, err = kcf.readRecord()
+		if err != nil {
+			return
+		}
+
+		kcf.archiveHdr, err = RecordToArchiveHeader(kcf.lastRecord)
+		if err != nil {
+			return
+		}
+	}
 
 	return
 }
