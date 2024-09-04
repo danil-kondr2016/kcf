@@ -144,3 +144,36 @@ func (kcf *Kcf) finishAddedData() (err error) {
 
 	return
 }
+
+func (kcf *Kcf) writeMarker() (err error) {
+	if !kcf.state.IsWriting() {
+		err = InvalidState
+		return
+	}
+
+	if kcf.state.GetStage() == stageNothing {
+		kcf.state.SetStage(stageMarker)
+	}
+
+	if kcf.state.GetStage() != stageMarker {
+		err = InvalidState
+		return
+	}
+
+	marker := []byte{0, 0, 0, 0, 0, 0}
+	marker[0] = 0x4B
+	marker[1] = 0x43
+	marker[2] = 0x21
+	marker[3] = 0x1A
+	marker[4] = 0x06
+	marker[5] = 0x00
+
+	_, err = kcf.file.Write(marker)
+	if err != nil {
+		return
+	}
+
+	kcf.state.SetStage(stageRecordHeader)
+
+	return
+}
