@@ -110,7 +110,7 @@ func (rec *Record) ReadFrom(r io.Reader) (n int64, err error) {
 
 	rec.unmarshal(Header, Data)
 	if !rec.ValidateCRC() {
-		err = InvalidRecordData
+		err = CorruptedRecordData
 	}
 	return
 }
@@ -267,6 +267,11 @@ func RecordToArchiveHeader(rec Record) (
 		return
 	}
 
+	if rec.HeadType != ARCHIVE_HEADER {
+		err = InvalidFormat
+		return
+	}
+
 	ahdr.Version = le.Uint16(rec.Data)
 	return
 }
@@ -276,6 +281,11 @@ func RecordToFileHeader(rec Record) (
 	err error,
 ) {
 	if !rec.ValidateCRC() {
+		err = CorruptedRecordData
+		return
+	}
+
+	if rec.HeadType != FILE_HEADER {
 		err = InvalidFormat
 		return
 	}
