@@ -91,8 +91,7 @@ func (kcf *Kcf) readAddedData(buf []byte) (n int, err error) {
 	}
 
 	if kcf.available == 0 {
-		kcf.state.SetStage(stageRecordHeader)
-		return 0, nil
+		return 0, io.EOF
 	}
 
 	lr := io.LimitReader(kcf.file, int64(kcf.available))

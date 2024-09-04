@@ -6,23 +6,29 @@ import "hash"
 
 // bit 0, 1 - parser mode
 // b10
-//
-//	00 - nothing
-//	01 - reading
-//	10 - writing
-//	11 - invalid
+// .00 - nothing
+// .01 - reading
+// .10 - writing
+// .11 - invalid
 //
 // bit 2, 3, 4, 5 - parser stage
 // b5432
-//
-//	0000 - nothing
-//	0001 - marker
-//	0002 - record header
-//	0003 - record main data
-//	0004 - record added data
+// .0000 - nothing
+// .0001 - marker
+// .0002 - record header
+// .0003 - record main data
+// .0004 - record added data
 //
 // bit 6 - should validate CRC32 of added data
 // bit 7 - has known size of added data
+//
+// bit 32, 33, 34, 35 - packer position
+// b 35 34 33 32
+// .  0  0  0  0  - nothing
+// .  0  0  0  1  - archive header
+// .  0  0  1  0  - file header
+// .  0  0  1  1  - file data
+// .  0  1  0  0  - file metadata
 type kcfState uint64
 
 type mode uint64
@@ -44,6 +50,28 @@ const (
 	stageRecordAddedData
 	stageMask stage = 0b111100
 )
+
+type packerPos uint64
+
+const (
+	pposNothing packerPos = (iota << 32)
+	pposArchiveStart
+	pposFileHeader
+	pposFileData
+	pposFileMetadata
+	pposMask packerPos = (0b1111 << 32)
+)
+
+func (state kcfState) GetPackerPos() packerPos {
+	return packerPos(uint64(state) & uint64(pposMask))
+}
+
+func (state *kcfState) SetPackerPos(ppos packerPos) {
+	x := uint64(*state)
+	x &^= uint64(pposMask)
+	x |= uint64(ppos & pposMask)
+	*state = kcfState(x)
+}
 
 const (
 	flagAddedCRC kcfState = (1 << (iota + 6))
@@ -156,6 +184,7 @@ func OpenArchive(path string) (kcf *Kcf, err error) {
 	}
 
 	kcf.state.SetMode(modeRead)
+	kcf.state.SetPackerPos(pposArchiveStart)
 
 	var err1 error
 	_, err1 = kcf.file.Seek(0, io.SeekCurrent)
@@ -169,6 +198,9 @@ func OpenArchive(path string) (kcf *Kcf, err error) {
 func (kcf *Kcf) Close() (err error) {
 	kcf.addedReader.R = nil
 	kcf.addedReader.N = 0
+	kcf.addedWriter.W = nil
+	kcf.addedWriter.N = 0
+
 	kcf.crc32 = nil
 	err = kcf.file.Close()
 
@@ -181,7 +213,11 @@ func (kcf *Kcf) GetCurrentFile() (info FileHeader, err error) {
 		return
 	}
 
-	if kcf.state.GetStage() == stageRecordHeader {
+	switch kcf.state.GetPackerPos() {
+	case pposArchiveStart:
+		err = InvalidState
+		return
+	case pposFileHeader:
 		_, err = kcf.readRecord()
 		if err != nil {
 			return
@@ -191,13 +227,82 @@ func (kcf *Kcf) GetCurrentFile() (info FileHeader, err error) {
 		if err != nil {
 			return
 		}
+
+		kcf.state.SetPackerPos(pposFileData)
+	case pposFileData:
+		fallthrough
+	case pposFileMetadata:
+		break
 	}
 
 	info = kcf.currentFile
 	return
 }
 
+func (kcf *Kcf) UnpackFile(w io.Writer) (n int64, err error) {
+	if !kcf.state.IsReading() {
+		return 0, InvalidState
+	}
+
+	if kcf.state.GetPackerPos() == pposFileHeader {
+		_, err = kcf.GetCurrentFile()
+		if err != nil {
+			return
+		}
+	}
+
+	if kcf.state.GetPackerPos() != pposFileData {
+		return 0, InvalidState
+	}
+
+	var flag bool = true
+
+	for flag || ((kcf.lastRecord.HeadFlags & 0x01) != 0) {
+		flag = false
+
+		if kcf.state.GetStage() == stageRecordAddedData {
+			buffer := make([]byte, 4096)
+			var n_read, n_written int
+
+			n_read, err = kcf.readAddedData(buffer)
+			if err != nil && err != io.EOF {
+				return
+			}
+
+			if err == io.EOF && kcf.lastRecord.HeadFlags&0x01 != 0 {
+				_, err = kcf.readRecord()
+				if err != nil {
+					return
+				}
+
+				if kcf.lastRecord.HeadType != DATA_FRAGMENT {
+					err = InvalidFormat
+					return
+				} else {
+					continue
+				}
+			}
+
+			// TODO compression if w != io.Discard
+			// and compression algorithm has been specified
+			n_written, err = w.Write(buffer[:n_read])
+			if err != nil {
+				return
+			}
+
+			n += int64(n_written)
+		}
+	}
+
+	return
+}
+
 func (kcf *Kcf) InitArchive() (err error) {
+	if kcf.state.GetPackerPos() != pposArchiveStart {
+		err = InvalidState
+		return
+	}
+
 	if kcf.state.IsWriting() {
 		err = kcf.writeMarker()
 		if err != nil {
@@ -229,6 +334,8 @@ func (kcf *Kcf) InitArchive() (err error) {
 			return
 		}
 	}
+
+	kcf.state.SetPackerPos(pposFileHeader)
 
 	return
 }
