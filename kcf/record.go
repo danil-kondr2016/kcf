@@ -323,3 +323,12 @@ func RecordToFileHeader(rec Record) (
 
 	return
 }
+
+func (rec Record) HasAddedSize() bool {
+	return ((rec.HeadFlags & HAS_ADDED_4) != 0) &&
+		rec.AddedDataSize > 0
+}
+
+func (rec Record) HasAddedCRC32() bool {
+	return rec.HeadFlags&HAS_ADDED_CRC32 != 0
+}
