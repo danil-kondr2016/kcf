@@ -79,7 +79,7 @@ func (rec *Record) unmarshal(header []byte, data []byte) error {
 		ptr += 4
 	}
 
-	rec.Data = make([]byte, int(rec.HeadSize)-ptr)
+	rec.Data = make([]byte, int(rec.HeadSize)-ptr-len(header))
 	copy(rec.Data, data[ptr:])
 
 	return nil
@@ -174,6 +174,7 @@ func (rec *Record) Fix() (err error) {
 		err = TooBigRecordData
 		return
 	}
+	rec.HeadSize = uint16(recSize)
 	rec.HeadCRC = rec.getHeadCRC()
 
 	return
@@ -254,6 +255,9 @@ func (fhdr FileHeader) AsRecord() (rec Record, err error) {
 	fileNameSize := len(fileNameBytes)
 	data = le.AppendUint16(data, uint16(fileNameSize))
 	data = append(data, fileNameBytes...)
+
+	rec.Data = data
+	rec.Fix()
 
 	return
 }

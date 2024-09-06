@@ -25,6 +25,7 @@ func (kcf *Kcf) readRecord() (rec Record, err error) {
 	if rec.HasAddedSize() {
 		kcf.addedReader.R = kcf.file
 		kcf.addedReader.N = int64(rec.AddedDataSize)
+		kcf.available = rec.AddedDataSize
 
 		if rec.HasAddedCRC32() {
 			kcf.validCrc = rec.AddedDataCRC32
@@ -94,10 +95,14 @@ func (kcf *Kcf) readAddedData(buf []byte) (n int, err error) {
 		return 0, io.EOF
 	}
 
-	lr := io.LimitReader(kcf.file, int64(kcf.available))
-	n, err = lr.Read(buf)
+	n, err = kcf.addedReader.Read(buf)
 	if err == nil || err == io.EOF {
 		kcf.available -= uint64(n)
+	}
+
+	if kcf.available == 0 {
+		kcf.state.SetStage(stageRecordHeader)
+		err = nil
 	}
 
 	if kcf.state.HasAddedCRC() {

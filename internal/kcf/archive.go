@@ -2,7 +2,6 @@ package kcf
 
 import (
 	"hash"
-	"hash/crc32"
 	"io"
 	"os"
 )
@@ -179,6 +178,7 @@ func CreateNewArchive(path string) (kcf *Kcf, err error) {
 	}
 
 	kcf.state.SetMode(modeWrite)
+	kcf.state.SetPackerPos(pposArchiveStart)
 	kcf.isWritable = true
 
 	var err1 error
@@ -270,44 +270,50 @@ func (kcf *Kcf) UnpackFile(w io.Writer) (n int64, err error) {
 		return 0, InvalidState
 	}
 
-	var flag bool = true
+	var eof bool = false
+	buffer := make([]byte, 4096)
 
-	for flag || ((kcf.lastRecord.HeadFlags & 0x01) != 0) {
-		flag = false
+	for {
+		var n_read, n_written int
 
-		if kcf.state.GetStage() == stageRecordAddedData {
-			buffer := make([]byte, 4096)
-			var n_read, n_written int
+		n_read, err = kcf.readAddedData(buffer)
+		if err != nil && err != io.EOF {
+			return
+		}
 
-			n_read, err = kcf.readAddedData(buffer)
-			if err != nil && err != io.EOF {
-				return
-			}
+		if kcf.available == 0 {
+			eof = true
+		}
 
-			if err == io.EOF && kcf.lastRecord.HeadFlags&0x01 != 0 {
-				_, err = kcf.readRecord()
-				if err != nil {
-					return
-				}
+		// TODO compression if w != io.Discard
+		// and compression algorithm has been specified
+		n_written, err = w.Write(buffer[:n_read])
+		if err != nil {
+			return
+		}
 
-				if kcf.lastRecord.HeadType != DATA_FRAGMENT {
-					err = InvalidFormat
-					return
-				} else {
-					continue
-				}
-			}
+		n += int64(n_written)
 
-			// TODO compression if w != io.Discard
-			// and compression algorithm has been specified
-			n_written, err = w.Write(buffer[:n_read])
+		if eof && kcf.lastRecord.HeadFlags&0x01 != 0 {
+			_, err = kcf.readRecord()
 			if err != nil {
 				return
 			}
+			if kcf.lastRecord.HeadType != DATA_FRAGMENT {
+				err = InvalidFormat
+				return
+			} else {
+				eof = false
+				continue
+			}
+		}
 
-			n += int64(n_written)
+		if eof && kcf.lastRecord.HeadFlags&0x01 == 0 {
+			break
 		}
 	}
+
+	kcf.state.SetPackerPos(pposFileHeader)
 
 	return
 }
@@ -337,6 +343,8 @@ func (kcf *Kcf) PackFileRaw(file *os.File) (err error) {
 		hdr.UnpackedSize = size
 	}
 
+	hdr.FileName = file.Name()
+
 	kcf.currentFile = hdr
 	kcf.lastRecord, err = kcf.currentFile.AsRecord()
 	if err != nil {
@@ -355,62 +363,36 @@ func (kcf *Kcf) PackFileRaw(file *os.File) (err error) {
 		kcf.lastRecord.HeadFlags &^= HAS_ADDED_8
 	}
 
+	kcf.lastRecord.Fix()
 	kcf.writeRecord(kcf.lastRecord)
 
 	var buffer []byte
 	var n int
-	if kcf.isSeekable {
-		for {
-			n, err = file.Read(buffer)
 
-			if err != nil && err != io.EOF {
-				return
-			}
+	buffer = make([]byte, 4096)
 
-			if err == io.EOF {
-				break
-			}
-
-			_, err = kcf.writeAddedData(buffer[:n])
-			if err != nil {
-				return
-			}
+	for {
+		n, err = file.Read(buffer)
+		if err != nil && err != io.EOF {
+			return
 		}
 
-		kcf.finishAddedData()
-	} else {
-		crc32c_table := crc32.MakeTable(crc32.Castagnoli)
-		crc32c := crc32.New(crc32c_table)
+		if n == 0 || err == io.EOF {
+			break
+		}
 
-		for {
-			n, err = file.Read(buffer)
-			if err != nil && err != io.EOF {
-				return
-			}
-
-			if err == io.EOF {
-				break
-			}
-
-			crc32c.Reset()
-			crc32c.Write(buffer[:n])
-			kcf.state.SetAddedCRCKnown(true)
-			kcf.lastRecord.HeadType = DATA_FRAGMENT
-			kcf.lastRecord.AddedDataSize = uint64(n)
-			kcf.lastRecord.AddedDataCRC32 = crc32c.Sum32()
-			kcf.lastRecord.HeadFlags = HAS_ADDED_4 | HAS_ADDED_CRC32
-			_, err = kcf.writeRecord(kcf.lastRecord)
-			if err != nil {
-				return
-			}
-
-			_, err = kcf.writeAddedData(buffer[:n])
-			if err != nil {
-				return
-			}
-			kcf.state.SetAddedCRCKnown(false)
+		_, err = kcf.writeAddedData(buffer[:n])
+		if err != nil {
+			return
 		}
 	}
+
+	if err == io.EOF {
+		err = nil
+	}
+
+	kcf.finishAddedData()
+	kcf.state.SetPackerPos(pposFileHeader)
 
 	return
 }
