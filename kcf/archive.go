@@ -1,8 +1,11 @@
 package kcf
 
-import "os"
-import "io"
-import "hash"
+import (
+	"hash"
+	"hash/crc32"
+	"io"
+	"os"
+)
 
 // bit 0, 1 - parser mode
 // b10
@@ -76,6 +79,7 @@ func (state *kcfState) SetPackerPos(ppos packerPos) {
 const (
 	flagAddedCRC kcfState = (1 << (iota + 6))
 	flagKnownSize
+	flagKnownAddedCRC
 )
 
 func (state kcfState) IsReading() bool {
@@ -123,6 +127,17 @@ func (state *kcfState) SetAddedSizeKnown(x bool) {
 	*state &^= flagKnownSize
 	if x {
 		*state |= flagKnownSize
+	}
+}
+
+func (state kcfState) IsAddedCRCKnown() bool {
+	return state&flagKnownAddedCRC != 0
+}
+
+func (state *kcfState) SetAddedCRCKnown(x bool) {
+	*state &^= flagKnownAddedCRC
+	if x {
+		*state |= flagKnownAddedCRC
 	}
 }
 
@@ -291,6 +306,109 @@ func (kcf *Kcf) UnpackFile(w io.Writer) (n int64, err error) {
 			}
 
 			n += int64(n_written)
+		}
+	}
+
+	return
+}
+
+func (kcf *Kcf) PackFileRaw(file *os.File) (err error) {
+	var info os.FileInfo
+
+	info, err = file.Stat()
+	if err != nil {
+		return err
+	}
+
+	size := uint64(info.Size())
+
+	var hdr FileHeader
+	hdr.FileFlags = HAS_TIMESTAMP
+
+	if info.IsDir() {
+		hdr.FileType = DIRECTORY
+	} else {
+		hdr.FileType = REGULAR_FILE
+		hdr.FileFlags |= HAS_UNPACKED_4
+		if info.Size() > 2147483647 {
+			hdr.FileFlags |= HAS_UNPACKED_8
+		}
+
+		hdr.UnpackedSize = size
+	}
+
+	kcf.currentFile = hdr
+	kcf.lastRecord, err = kcf.currentFile.AsRecord()
+	if err != nil {
+		return err
+	}
+
+	kcf.lastRecord.HeadFlags |= HAS_ADDED_4
+	if size > 2147483647 {
+		kcf.lastRecord.HeadFlags |= HAS_ADDED_8
+	}
+	kcf.lastRecord.AddedDataSize = size
+
+	if !kcf.isSeekable {
+		kcf.lastRecord.HeadFlags |= 0x01
+		kcf.lastRecord.AddedDataSize = 0
+		kcf.lastRecord.HeadFlags &^= HAS_ADDED_8
+	}
+
+	kcf.writeRecord(kcf.lastRecord)
+
+	var buffer []byte
+	var n int
+	if kcf.isSeekable {
+		for {
+			n, err = file.Read(buffer)
+
+			if err != nil && err != io.EOF {
+				return
+			}
+
+			if err == io.EOF {
+				break
+			}
+
+			_, err = kcf.writeAddedData(buffer[:n])
+			if err != nil {
+				return
+			}
+		}
+
+		kcf.finishAddedData()
+	} else {
+		crc32c_table := crc32.MakeTable(crc32.Castagnoli)
+		crc32c := crc32.New(crc32c_table)
+
+		for {
+			n, err = file.Read(buffer)
+			if err != nil && err != io.EOF {
+				return
+			}
+
+			if err == io.EOF {
+				break
+			}
+
+			crc32c.Reset()
+			crc32c.Write(buffer[:n])
+			kcf.state.SetAddedCRCKnown(true)
+			kcf.lastRecord.HeadType = DATA_FRAGMENT
+			kcf.lastRecord.AddedDataSize = uint64(n)
+			kcf.lastRecord.AddedDataCRC32 = crc32c.Sum32()
+			kcf.lastRecord.HeadFlags = HAS_ADDED_4 | HAS_ADDED_CRC32
+			_, err = kcf.writeRecord(kcf.lastRecord)
+			if err != nil {
+				return
+			}
+
+			_, err = kcf.writeAddedData(buffer[:n])
+			if err != nil {
+				return
+			}
+			kcf.state.SetAddedCRCKnown(false)
 		}
 	}
 

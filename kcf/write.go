@@ -122,6 +122,15 @@ func (kcf *Kcf) finishAddedData() (err error) {
 
 	if !kcf.state.HasAddedCRC() && kcf.state.IsAddedSizeKnown() {
 		kcf.state.SetStage(stageRecordHeader)
+		kcf.state.SetAddedSizeKnown(false)
+		return
+	}
+
+	if kcf.state.IsAddedCRCKnown() && kcf.state.IsAddedSizeKnown() {
+		kcf.state.SetStage(stageRecordHeader)
+		kcf.state.SetAddedSizeKnown(false)
+		kcf.state.SetAddedCRCKnown(false)
+		kcf.state.SetHasAddedCRC(false)
 		return
 	}
 
