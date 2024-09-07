@@ -7,6 +7,11 @@ import (
 	"os"
 )
 
+func die(err error) {
+	fmt.Printf("%s: %v\n", os.Args[0], err)
+	os.Exit(1)
+}
+
 func banner() {
 	fmt.Println("KCF archiver v0.0.1 by Danila A. Kondratenko")
 	fmt.Println("(c) 2024")
@@ -39,12 +44,12 @@ func main() {
 func unpack(archivePath string) int {
 	archive, err := kcf.OpenArchive(archivePath)
 	if err != nil {
-		panic(err)
+		die(err)
 	}
 
 	err = archive.InitArchive()
 	if err != nil {
-		panic(err)
+		die(err)
 	}
 
 	var fileInfo kcf.FileHeader
@@ -52,7 +57,7 @@ func unpack(archivePath string) int {
 	for err == nil {
 		fileInfo, err = archive.GetCurrentFile()
 		if err != nil && err != io.EOF {
-			panic(err)
+			die(err)
 		}
 		if err == io.EOF {
 			break
@@ -62,18 +67,18 @@ func unpack(archivePath string) int {
 
 		output, err = os.Create(fileInfo.FileName)
 		if err != nil {
-			panic(err)
+			die(err)
 		}
 		defer output.Close()
 
 		_, err = archive.UnpackFile(output)
 		if err != nil && err != io.EOF {
-			panic(err)
+			die(err)
 		}
 	}
 
 	if err != nil && err != io.EOF {
-		panic(err)
+		die(err)
 	}
 
 	return 0
