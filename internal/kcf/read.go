@@ -7,13 +7,11 @@ import (
 
 func (kcf *Kcf) readRecord() (rec Record, err error) {
 	if !kcf.state.IsReading() {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	if kcf.state.GetStage() != stageRecordHeader {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	_, err = kcf.lastRecord.ReadFrom(kcf.file)
@@ -43,13 +41,11 @@ func (kcf *Kcf) readRecord() (rec Record, err error) {
 
 func (kcf *Kcf) skipRecord() (err error) {
 	if !kcf.state.IsReading() {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	if kcf.state.GetStage() != stageRecordHeader {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	_, err = kcf.readRecord()
@@ -69,11 +65,11 @@ func (kcf *Kcf) skipRecord() (err error) {
 
 func (kcf *Kcf) skipAddedData() (err error) {
 	if !kcf.state.IsReading() {
-		return InvalidState
+		panic(InvalidState)
 	}
 
 	if kcf.state.GetStage() != stageRecordAddedData {
-		return InvalidState
+		panic(InvalidState)
 	}
 
 	_, err = io.CopyN(io.Discard, kcf.file, kcf.addedReader.N)
@@ -84,11 +80,11 @@ func (kcf *Kcf) skipAddedData() (err error) {
 
 func (kcf *Kcf) readAddedData(buf []byte) (n int, err error) {
 	if !kcf.state.IsReading() {
-		return 0, InvalidState
+		panic(InvalidState)
 	}
 
 	if kcf.state.GetStage() != stageRecordAddedData {
-		return 0, InvalidState
+		panic(InvalidState)
 	}
 
 	if kcf.available == 0 {
@@ -119,8 +115,7 @@ func (kcf *Kcf) scanForMarker() (err error) {
 	var marker [6]byte
 
 	if !kcf.state.IsReading() {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	if kcf.state.GetStage() == stageNothing {
@@ -128,8 +123,7 @@ func (kcf *Kcf) scanForMarker() (err error) {
 	}
 
 	if kcf.state.GetStage() != stageMarker {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	for {

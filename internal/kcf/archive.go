@@ -224,14 +224,12 @@ func (kcf *Kcf) Close() (err error) {
 
 func (kcf *Kcf) GetCurrentFile() (info FileHeader, err error) {
 	if !kcf.state.IsReading() {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	switch kcf.state.GetPackerPos() {
 	case pposArchiveStart:
-		err = InvalidState
-		return
+		panic(InvalidState)
 	case pposFileHeader:
 		_, err = kcf.readRecord()
 		if err != nil {
@@ -256,7 +254,7 @@ func (kcf *Kcf) GetCurrentFile() (info FileHeader, err error) {
 
 func (kcf *Kcf) UnpackFile(w io.Writer) (n int64, err error) {
 	if !kcf.state.IsReading() {
-		return 0, InvalidState
+		panic(InvalidState)
 	}
 
 	if kcf.state.GetPackerPos() == pposFileHeader {
@@ -267,7 +265,7 @@ func (kcf *Kcf) UnpackFile(w io.Writer) (n int64, err error) {
 	}
 
 	if kcf.state.GetPackerPos() != pposFileData {
-		return 0, InvalidState
+		panic(InvalidState)
 	}
 
 	var eof bool = false
@@ -399,8 +397,7 @@ func (kcf *Kcf) PackFileRaw(file *os.File) (err error) {
 
 func (kcf *Kcf) InitArchive() (err error) {
 	if kcf.state.GetPackerPos() != pposArchiveStart {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	if kcf.state.IsWriting() {

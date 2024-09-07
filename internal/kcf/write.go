@@ -6,8 +6,7 @@ import "errors"
 
 func (kcf *Kcf) writeRecord(rec Record) (n int64, err error) {
 	if !kcf.state.IsWriting() {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	if kcf.state.GetStage() == stageRecordAddedData {
@@ -18,8 +17,7 @@ func (kcf *Kcf) writeRecord(rec Record) (n int64, err error) {
 	}
 
 	if kcf.state.GetStage() != stageRecordHeader {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	kcf.recOffset, err = kcf.file.Seek(0, io.SeekCurrent)
@@ -85,13 +83,11 @@ func LimitWriter(w io.Writer, n int64) (lw *LimitedWriter) {
 
 func (kcf *Kcf) writeAddedData(buf []byte) (n int, err error) {
 	if !kcf.state.IsWriting() {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	if kcf.state.GetStage() != stageRecordAddedData {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	if kcf.state.IsAddedSizeKnown() {
@@ -111,13 +107,11 @@ func (kcf *Kcf) writeAddedData(buf []byte) (n int, err error) {
 
 func (kcf *Kcf) finishAddedData() (err error) {
 	if !kcf.state.IsWriting() {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	if kcf.state.GetStage() != stageRecordAddedData {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	if !kcf.state.HasAddedCRC() && kcf.state.IsAddedSizeKnown() {
@@ -156,8 +150,7 @@ func (kcf *Kcf) finishAddedData() (err error) {
 
 func (kcf *Kcf) writeMarker() (err error) {
 	if !kcf.state.IsWriting() {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	if kcf.state.GetStage() == stageNothing {
@@ -165,8 +158,7 @@ func (kcf *Kcf) writeMarker() (err error) {
 	}
 
 	if kcf.state.GetStage() != stageMarker {
-		err = InvalidState
-		return
+		panic(InvalidState)
 	}
 
 	marker := []byte{0, 0, 0, 0, 0, 0}
